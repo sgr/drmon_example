@@ -18,8 +18,8 @@ TIMEOUT_SEC = 10
 
 class SensorMonitor(threading.Thread):
     def __init__(self, sensor_port, baud_rate, camera, writer):
+        threading.Thread.__init__(self, name='SensorMonitor')
         self.setDaemon(True)
-        self.setName('SensorMonitor')
         self.sensor_port = sensor_port
         self.baud_rate = baud_rate
         self.camera = camera
@@ -53,8 +53,8 @@ class SensorMonitor(threading.Thread):
 # http://picamera.readthedocs.org/en/release-1.9/recipes1.html#recording-to-a-circular-stream
 class CameraMonitor(threading.Thread):
     def __init__(self, writer):
+        threading.Thread.__init__(self, name='CameraMonitor')
         self.setDaemon(True)
-        self.setName('CameraMonitor')
         self.writer = writer
         self.name = "dummy.h264"
         self.stop_event = threading.Event()
@@ -92,20 +92,23 @@ class CameraMonitor(threading.Thread):
 
 class OutputWriter(threading.Thread):
     def __init__(self, base_path):
+        threading.Thread.__init__(self, name='OutputWriter')
         self.base_path = base_path
-        self.queue = Queue()
+        self.queue = queue.Queue()
         self.stop_event = threading.Event()
 
     def run(self):
         while not self.stop_event.is_set():
-            op = self.queue.get(timeout=TIMEOUT_SEC)
             try:
-                if op: op()
+                op = self.queue.get(timeout=TIMEOUT_SEC)
+                try:
+                    if op: op()
+                except:
+                    e = sys.exc_info()
+                    sys.stderr.write("WRITING OPERATION ERROR: {0}, {1}\n".format(e[0], e[1]))
+                    raise
             except:
-                e = sys.exc_info()
-                sys.stderr.write("WRITING OPERATION ERROR: {0}, {1}\n".format(e[0], e[1]))
-                raise
-        sys.stderr.write("FINISHED WRITING OPS\n")
+                continue
 
     def write_sensor_value(self, value):
         def op_append():
@@ -132,8 +135,9 @@ if __name__ == "__main__":
     ow = OutputWriter(OUTPUT_PATH)
     cm = CameraMonitor(ow)
     sm = SensorMonitor(SENSOR_PORT, BAUD_RATE, cm, ow)
-    def shutdown():
-        sys.stderr.write("SHUTTING DOWN... ")
+    def shutdown(signum, sframe):
+        sys.stderr.write("CAUGHT SIGNAL ({0})\n".format(signum))
+        sys.stderr.write("SHUTTING DOWN NOW... ".format(signum))
         sm.stop()
         cm.stop()
         ow.stop()
